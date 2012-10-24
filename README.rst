@@ -52,10 +52,10 @@ Create ``postfix_stats.sh`` that calls postfix_stats.py with the arguments you w
     $actionomprogbinary /usr/bin/postfix_stats.sh
     :syslogtag, startswith, "postfix" :omprog:;RSYSLOG_TraditionalFileFormat
 
-/usr/local/bin/postfix_stats.sh
+/usr/bin/postfix_stats.sh
 ::
     #!/bin/bash
-    /usr/local/bin/postfix_stats.py -d
+    /usr/bin/postfix_stats.py -d
 
 **tail**
 
