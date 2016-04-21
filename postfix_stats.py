@@ -229,6 +229,9 @@ class CommandHandler(SocketServer.StreamRequestHandler):
 
 
 class ThreadedTCPServer(SocketServer.ThreadingMixIn, SocketServer.TCPServer):
+    deamon = True
+    deamon_threads = True
+    allow_reuse_address = True
     pass
 
 
@@ -270,7 +273,6 @@ def main(logs, daemon=False, host='127.0.0.1', port=7777, concurrency=2, local_e
     if daemon:
         server = ThreadedTCPServer((host, port), CommandHandler)
         server_thread = Thread(target=server.serve_forever)
-        server_thread.daemon = True
         server_thread.start()
         logger.info('Listening on %s:%s', host, port)
 
@@ -295,6 +297,7 @@ def main(logs, daemon=False, host='127.0.0.1', port=7777, concurrency=2, local_e
         print json.dumps(stats, indent=2)
     else:
         server.shutdown()
+        server.server_close()
 
     return 0
 
