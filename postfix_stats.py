@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 
 """
 postfix_stats.py
@@ -36,6 +36,7 @@ stats['send'] = {
     'status': defaultdict(int),
     'resp_codes': defaultdict(int),
 }
+stats['dkim'] = defaultdict(int)
 stats['in'] = {
     'status': defaultdict(int),
     'resp_codes': defaultdict(int),
@@ -159,11 +160,21 @@ class SmtpdHandler(Handler):
     @classmethod
     def handle(self, message_id=None, client_hostname=None, client_ip=None, orig_client_hostname=None, orig_client_ip=None):
         ip = orig_client_ip or client_ip
-
         if self.component is None:
             stats['clients'][ip] += 1
         else:
             stats['relay_clients'][self.component][ip] += 1
+
+class DkimHandler(Handler):
+    facilities = set(['dkim'])
+    filter_re = re.compile('\w+: (?P<added>DKIM-Signature field added)')
+    
+    @classmethod
+    def handle(self, added=None):
+        if added is None:
+            stats['dkim']['unsigned'] += 1
+        else:
+            stats['dkim']['signed'] += 1
 
 class Parser(Thread):
     line_re = re.compile(r'\A(?P<iso_date>\D{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+(?P<source>.+?)\s+(?P<facility>.+?)\[(?P<pid>\d+?)\]:\s(?P<message>.*)\Z')
@@ -192,14 +203,18 @@ class Parser(Thread):
         if pln:
             pline = pln.groupdict()
             logger.debug(pline)
-
-            component, facility = pline['facility'].split('/')
-            component = component.replace('postfix-', '') if relay_mode else None
+            # Handle opendkim logs without error
+            dkim_pat = re.compile('opendkim')
+            if dkim_pat.match(pline['facility']):
+                component = "dkim" if relay_mode else None
+                facility = "dkim"
+            else: 
+                component, facility = pline['facility'].split('/')
+                component = component.replace('postfix-', '') if relay_mode else None
             pline['component'] = component
 
             for handler in handlers[facility]:
                 handler.parse(pline)
-
 
 class ParserPool(object):
     def __init__(self, num_parsers):
@@ -229,6 +244,9 @@ class CommandHandler(SocketServer.StreamRequestHandler):
 
 
 class ThreadedTCPServer(SocketServer.ThreadingMixIn, SocketServer.TCPServer):
+    deamon = True
+    deamon_threads = True
+    allow_reuse_address = True
     pass
 
 
@@ -265,12 +283,11 @@ def main(logs, daemon=False, host='127.0.0.1', port=7777, concurrency=2, local_e
     else:
         local_addresses_re = re.compile(r'(?!)')
 
-    handlers = (LocalHandler(local_addresses_re), SmtpHandler(), SmtpdHandler())
+    handlers = (LocalHandler(local_addresses_re), SmtpHandler(), SmtpdHandler(), DkimHandler())
 
     if daemon:
         server = ThreadedTCPServer((host, port), CommandHandler)
         server_thread = Thread(target=server.serve_forever)
-        server_thread.daemon = True
         server_thread.start()
         logger.info('Listening on %s:%s', host, port)
 
@@ -295,6 +312,7 @@ def main(logs, daemon=False, host='127.0.0.1', port=7777, concurrency=2, local_e
         print json.dumps(stats, indent=2)
     else:
         server.shutdown()
+        server.server_close()
 
     return 0
 
